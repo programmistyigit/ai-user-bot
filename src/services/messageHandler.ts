@@ -1,5 +1,5 @@
 import { NewMessageEvent } from 'telegram/events';
-import { Api } from 'telegram';
+import { Api, helpers } from 'telegram';
 import { UserModel } from '../database/models';
 import { aiHandler } from '../ai/ollama';
 import { config } from '../config';
@@ -128,6 +128,34 @@ export const handleIncomingMessage = async (event: NewMessageEvent) => {
 
         // Agar request abort bo'lmagan bo'lsa — javobni yuborish
         if (!abortController.signal.aborted) {
+            // Check for coordinates in the response (e.g., 39.666818, 66.934545)
+            const geoMatch = aiResponse.match(/(\d+\.\d+),\s*(\d+\.\d+)/);
+            if (geoMatch) {
+                const lat = parseFloat(geoMatch[1]);
+                const long = parseFloat(geoMatch[2]);
+
+                try {
+                    if (peer && event.client) {
+                        await event.client.invoke(
+                            new Api.messages.SendMedia({
+                                peer: peer,
+                                media: new Api.InputMediaGeoPoint({
+                                    geoPoint: new Api.InputGeoPoint({
+                                        lat: lat,
+                                        long: long
+                                    })
+                                }),
+                                message: '',
+                                randomId: helpers.generateRandomBigInt()
+                            })
+                        );
+                        logger.info(`📍 Location sent to ${userId}: ${lat}, ${long}`);
+                    }
+                } catch (geoError) {
+                    logger.error('Error sending location:', geoError);
+                }
+            }
+
             await message.respond({ message: aiResponse, parseMode: "html" });
         }
 
