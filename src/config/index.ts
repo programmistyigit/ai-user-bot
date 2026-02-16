@@ -10,7 +10,6 @@ interface Config {
     OLLAMA_HOST: string;
     ADMIN_PHONE: string;
     SESSION_STRING: string;
-    AI_MODEL: string;
 }
 
 const getEnv = (key: string, required: boolean = true): string => {
@@ -28,5 +27,4 @@ export const config: Config = {
     OLLAMA_HOST: getEnv('OLLAMA_HOST'),
     ADMIN_PHONE: getEnv('ADMIN_PHONE'),
     SESSION_STRING: getEnv('SESSION_STRING', false), // Optional initially
-    AI_MODEL: getEnv('AI_MODEL', false) || 'deepseek-v3.1:671b-cloud',
 };
