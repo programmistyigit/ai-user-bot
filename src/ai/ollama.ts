@@ -10,7 +10,7 @@ export interface ChatMessage {
 }
 
 export class AIHandler {
-    private model: string = 'deepseek-v3.2:cloud';
+    private model: string = 'qwen3-vl:235b-cloud';
 
     public async generateResponse(history: ChatMessage[], signal?: AbortSignal): Promise<string> {
         try {
