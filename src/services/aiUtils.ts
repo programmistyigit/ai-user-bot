@@ -55,8 +55,6 @@ export async function sendTextToAI(
             content: getMessageText(msg) || 'Salom'
         }))
         .filter((msg: { content: string }) => {
-            console.log(msg.content);
-
             return msg.content.trim().length > 0 ? msg.content : "salom";
         });
 
