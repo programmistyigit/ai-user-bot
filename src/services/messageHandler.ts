@@ -4,166 +4,130 @@ import { UserModel } from '../database/models';
 import { aiHandler } from '../ai/ollama';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import {
+    addImageToSession,
+    abortImageSession,
+    isPhotoMessage,
+    isDocumentFile,
+    isLocationMessage,
+    isGreetingMedia
+} from './imageSessionManager';
+import {
+    sendTextToAI,
+    getMessageText,
+    pendingRequests
+} from './aiUtils';
 
 // Admin keywords regex (case insensitive)
 const ADMIN_KEYWORDS = /admin|manager|odam|inson|bog['`']lanish|gaplashish/i;
 
-// Har bir user uchun pending AI requestni track qilish
-// Yangi xabar kelganda oldingi request bekor qilinadi
-const pendingRequests = new Map<string, AbortController>();
-
 // Session middleware: /abortSession bilan to'xtatilgan chatlar
 // Bu chatlardan kelgan xabarlarga AI javob bermaydi
 const abortedSessions = new Set<string>();
-
-const getMessageText = (message: Api.Message): string => {
-    if (message.text && message.text.trim().length > 0) {
-        return message.text;
-    }
-
-    if (message.contact) {
-        const phoneNumber = message.contact.phoneNumber;
-        return `[Kontakt raqami: +${phoneNumber}]`;
-    }
-
-    // Agar matn bo'lmasa (stiker, gif, rasm, video) -> Modelga shunchaki "Salom" deb yuboramiz.
-    // Bu modelni chalkashtirmaslik va "Stiker kerakmi?" deb so'ramasligi uchun.
-    return 'Salom';
-};
 
 export const handleIncomingMessage = async (event: NewMessageEvent) => {
     try {
         const message = event.message;
         const sender = await message.getSender();
 
-        // Check if sender is a User (not channel/group) and chat is private
         if (!sender || !(sender instanceof Api.User) || !event.isPrivate) {
             return;
         }
 
-        // Ignore bots and self
         if (sender.bot || sender.self) {
             return;
         }
 
         const userId = sender.id.toString();
-        const text = getMessageText(message);
-
-        // Guard: bo'sh yoki undefined xabarlarni e'tiborsiz qoldirish
-        if (!text || text.trim().length === 0) {
-            return;
-        }
 
         // ===== SESSION MIDDLEWARE =====
-        // /abortSession — bu chatdan AI javob berishni to'xtatish
-        if (text.trim().toLowerCase() === '/abortSession'.toLowerCase()) {
+        const text = getMessageText(message);
+
+        if (text.trim().toLowerCase() === '/abortsession') {
             abortedSessions.add(userId);
-            // Agar pending request bo'lsa — uni ham bekor qilish
             if (pendingRequests.has(userId)) {
                 pendingRequests.get(userId)!.abort();
                 pendingRequests.delete(userId);
             }
+            abortImageSession(userId);
             logger.info(`🚫 Session to'xtatildi, user: ${userId}`);
             return;
         }
 
-        // /reConnectSession — bu chatda AI javob berishni qayta boshlash
-        if (text.trim().toLowerCase() === '/reConnectSession'.toLowerCase()) {
+        if (text.trim().toLowerCase() === '/reconnectsession') {
             abortedSessions.delete(userId);
             logger.info(`✅ Session qayta ulandi, user: ${userId}`);
             return;
         }
 
-        // Agar bu chat aborted bo'lsa — hech narsa qilmaslik
         if (abortedSessions.has(userId)) {
             logger.info(`⏸️ Xabar e'tiborsiz qoldirildi (session to'xtatilgan), user: ${userId}`);
             return;
         }
         // ===== END SESSION MIDDLEWARE =====
 
-        // 1. Check if Blocked
+        // Check if Blocked
         const user = await UserModel.findOne({ telegramId: userId });
         if (user && user.blockedUntil && user.blockedUntil > new Date()) {
             logger.info(`Ignored message from blocked user: ${userId}`);
             return;
         }
 
+        // ===== MEDIA HANDLING =====
+
+        // 1. Photo → imageSessionManager ga
+        if (isPhotoMessage(message)) {
+            logger.info(`🖼️ Rasm aniqlandi, user: ${userId}`);
+            if (pendingRequests.has(userId)) {
+                pendingRequests.get(userId)!.abort();
+                pendingRequests.delete(userId);
+            }
+            await addImageToSession(userId, message, event.client!);
+            return;
+        }
+
+        // 2. Document (pdf, zip, docx) → kod javob beradi
+        if (isDocumentFile(message)) {
+            logger.info(`📎 Document fayl qabul qilindi, user: ${userId}`);
+            await message.respond({
+                message: "📎 Faylingizni qabul qildik! Adminlarimiz tez orada ko'rib chiqishadi.",
+                parseMode: "html"
+            });
+            return;
+        }
+
+        // 3. Lokatsiya → modelga context bilan yuborish
+        if (isLocationMessage(message)) {
+            logger.info(`📍 Lokatsiya qabul qilindi, user: ${userId}`);
+            await sendTextToAI(
+                userId,
+                "[Client o'z joylashuvini (lokatsiyasini) yubordi]",
+                message,
+                event
+            );
+            return;
+        }
+
+        // 4. GIF, Video, Sticker, Voice, Video note → modelga "Salom"
+        if (isGreetingMedia(message)) {
+            logger.info(`🎬 Media (video/gif/sticker/voice) aniqlandi, user: ${userId}`);
+            await sendTextToAI(userId, 'Salom', message, event);
+            return;
+        }
+
+        // ===== TEXT-ONLY PROCESSING =====
+
+        if (!text || text.trim().length === 0) {
+            return;
+        }
+
         // 2. Check for Admin Request
 
 
-        // 3. AI Processing
-
-        // Agar bu user uchun oldingi pending request bo'lsa — bekor qilish
-        if (pendingRequests.has(userId)) {
-            pendingRequests.get(userId)!.abort();
-            logger.info(`⏹️ Oldingi AI request bekor qilindi, user: ${userId}`);
-        }
-
-        // Yangi AbortController yaratish
-        const abortController = new AbortController();
-        pendingRequests.set(userId, abortController);
-
-        // Fetch recent history from Telegram
-        const peer = await message.getInputChat();
-        const historyMessages = await event.client?.getMessages(peer, { limit: 10 }) || [];
-
-        // Convert Telegram messages to AI history format
-        // historyMessages is newest first, so we reverse it
-        const history = historyMessages
-            .reverse()
-            .map(msg => ({
-                role: msg.out ? 'assistant' : 'user' as 'user' | 'assistant',
-                content: getMessageText(msg)
-            }))
-            .filter(msg => msg.content.trim().length > 0);
-
-        // Generate AI Response
-        // Show typing status
-        await message.client?.invoke(new Api.messages.SetTyping({
-            peer: peer,
-            action: new Api.SendMessageTypingAction()
-        }));
-
-        const aiResponse = await aiHandler.generateResponse(history, abortController.signal);
-
-        // Agar request abort bo'lmagan bo'lsa — javobni yuborish
-        if (!abortController.signal.aborted) {
-            // Check for coordinates in the response (e.g., 39.666818, 66.934545)
-            const geoMatch = aiResponse.match(/(\d+\.\d+),\s*(\d+\.\d+)/);
-            if (geoMatch) {
-                const lat = parseFloat(geoMatch[1]);
-                const long = parseFloat(geoMatch[2]);
-
-                try {
-                    if (peer && event.client) {
-                        await event.client.invoke(
-                            new Api.messages.SendMedia({
-                                peer: peer,
-                                media: new Api.InputMediaGeoPoint({
-                                    geoPoint: new Api.InputGeoPoint({
-                                        lat: lat,
-                                        long: long
-                                    })
-                                }),
-                                message: '',
-                                randomId: helpers.generateRandomBigInt()
-                            })
-                        );
-                        logger.info(`📍 Location sent to ${userId}: ${lat}, ${long}`);
-                    }
-                } catch (geoError) {
-                    logger.error('Error sending location:', geoError);
-                }
-            }
-
-            await message.respond({ message: aiResponse, parseMode: "html" });
-        }
-
-        // Cleanup: pending request'ni o'chirish
-        pendingRequests.delete(userId);
+        // 3. Text AI Processing
+        await sendTextToAI(userId, text, message, event);
 
     } catch (error: any) {
-        // AbortError — bu normal holat, user yangi xabar yuborgan
         if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
             logger.info('🔄 AI request bekor qilindi (yangi xabar keldi)');
             return;
