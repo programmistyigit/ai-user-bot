@@ -16,7 +16,7 @@ export const getMessageText = (message: Api.Message): string => {
         return `[Kontakt raqami: +${phoneNumber}]`;
     }
 
-    return '';
+    return '[media]';
 };
 
 /**
@@ -40,11 +40,8 @@ export async function sendTextToAI(
 
     const peer = await message.getInputChat();
 
-    // Type guard for client
-    let client: TelegramClient | undefined;
-    if ('client' in event) {
-        client = event.client;
-    }
+    // Client olish (har ikkala type da ham mavjud)
+    const client = 'client' in event ? event.client : undefined;
 
     // Telegram history olish
     const historyMessages = await client?.getMessages(peer, { limit: 10 }) || [];
@@ -54,9 +51,7 @@ export async function sendTextToAI(
             role: (msg.out ? 'assistant' : 'user') as 'user' | 'assistant',
             content: getMessageText(msg) || 'Salom'
         }))
-        .filter((msg: { content: string }) => {
-            return msg.content.trim().length > 0 ? msg.content : "salom";
-        });
+        .filter((msg: { content: string }) => msg.content.trim().length > 0);
 
     // Oxirgi xabarni textToSend bilan almashtirish (agar rasm bolsa context qo'shilgan bo'ladi)
     if (history.length > 0 && !message.out) {
@@ -78,11 +73,11 @@ export async function sendTextToAI(
         const aiResponse = await aiHandler.generateResponse(history, abortController.signal);
 
         if (!abortController.signal.aborted) {
-            // Koordinata tekshirish
-            const geoMatch = aiResponse.match(/(\d+\.\d+),\s*(\d+\.\d+)/);
+            // Koordinata tekshirish (faqat O'zbekiston diapazoni: lat 30-45, long 55-75)
+            const geoMatch = aiResponse.match(/(3[0-9]|4[0-5])\.(\d{3,6}),\s*(5[5-9]|6[0-9]|7[0-5])\.(\d{3,6})/);
             if (geoMatch) {
-                const lat = parseFloat(geoMatch[1]);
-                const long = parseFloat(geoMatch[2]);
+                const lat = parseFloat(geoMatch[1] + '.' + geoMatch[2]);
+                const long = parseFloat(geoMatch[3] + '.' + geoMatch[4]);
                 try {
                     if (peer && client) {
                         await client.invoke(
@@ -106,7 +101,6 @@ export async function sendTextToAI(
                 await message.respond({ message: aiResponse, parseMode: "html" });
             } else {
                 logger.warn(`⚠️ AI model (${aiHandler.textModel}) returned empty response, user: ${userId}`);
-                await message.respond({ message: "Uzr, hozirda javob berishda biroz xatolik bo'ldi. Iltimos, qaytadan yozib ko'ring.", parseMode: "html" });
             }
         }
     } finally {

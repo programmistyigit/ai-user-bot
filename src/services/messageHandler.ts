@@ -1,8 +1,6 @@
 import { NewMessageEvent } from 'telegram/events';
-import { Api, helpers } from 'telegram';
+import { Api } from 'telegram';
 import { UserModel } from '../database/models';
-import { aiHandler } from '../ai/ollama';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 import {
     addImageToSession,
@@ -18,8 +16,6 @@ import {
     pendingRequests
 } from './aiUtils';
 
-// Admin keywords regex (case insensitive)
-const ADMIN_KEYWORDS = /admin|manager|odam|inson|bog['`']lanish|gaplashish/i;
 
 // Session middleware: /abortSession bilan to'xtatilgan chatlar
 // Bu chatlardan kelgan xabarlarga AI javob bermaydi

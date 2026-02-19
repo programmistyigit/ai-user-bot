@@ -14,6 +14,61 @@ export class AIHandler {
     public textModel: string = 'deepseek-v3.2:cloud';
     public visionModel: string = 'qwen3-vl:235b-cloud';
 
+    private maxRetries: number = 3;
+    private baseDelay: number = 2000; // 2 sekund
+
+    /**
+     * Retry bilan Ollama chat so'rovi
+     * 503 (Service Unavailable) xatolarda qayta urinadi
+     */
+    private async chatWithRetry(
+        ollamaClient: Ollama,
+        model: string,
+        messages: ChatMessage[],
+        signal?: AbortSignal
+    ): Promise<string> {
+        let lastError: any;
+
+        for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+            try {
+                if (signal?.aborted) {
+                    throw new DOMException('Request aborted', 'AbortError');
+                }
+
+                const response = await ollamaClient.chat({
+                    model: model,
+                    messages: messages,
+                });
+                return response.message.content;
+
+            } catch (error: any) {
+                lastError = error;
+
+                // AbortError — qayta urinmaslik
+                if (error?.name === 'AbortError') {
+                    throw error;
+                }
+
+                // 503 yoki network xato — retry
+                const isRetryable = error?.status_code === 503
+                    || error?.message?.includes('Service Temporarily Unavailable')
+                    || error?.message?.includes('503');
+
+                if (isRetryable && attempt < this.maxRetries) {
+                    const delay = this.baseDelay * Math.pow(2, attempt - 1); // 2s, 4s, 8s
+                    logger.warn(`⚠️ Attempt ${attempt}/${this.maxRetries} failed (503). Retrying in ${delay / 1000}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+
+                // Boshqa xato yoki oxirgi attempt — throw
+                throw error;
+            }
+        }
+
+        throw lastError;
+    }
+
     /**
      * Text-only AI javob generatsiyasi (mavjud logika)
      */
@@ -39,11 +94,7 @@ export class AIHandler {
                 }
             });
 
-            const response = await ollamaClient.chat({
-                model: this.textModel,
-                messages: messages,
-            });
-            const output = response.message.content;
+            const output = await this.chatWithRetry(ollamaClient, this.textModel, messages, signal);
 
             return output;
 
@@ -52,7 +103,7 @@ export class AIHandler {
                 throw error;
             }
             logger.error('AI Generation Error:', error);
-            return "Uzr, hozirda tizimda texnik nosozlik yuz berdi. Iltimos, keyinroq urinib ko'ring.";
+            return '';
         }
     }
 
@@ -94,11 +145,7 @@ export class AIHandler {
                 }
             });
 
-            const response = await ollamaClient.chat({
-                model: this.visionModel,
-                messages: messages,
-            });
-            const output = response.message.content;
+            const output = await this.chatWithRetry(ollamaClient, this.visionModel, messages, signal);
 
             logger.info('✅ Vision response generated successfully');
             return output;
@@ -108,7 +155,7 @@ export class AIHandler {
                 throw error;
             }
             logger.error('Vision AI Generation Error:', error);
-            return "Uzr, rasmni tahlil qilishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.";
+            return '';
         }
     }
 }

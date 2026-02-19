@@ -1,13 +1,18 @@
 import mongoose from 'mongoose';
-import { config } from '../config';
 import { logger } from '../utils/logger';
 
 export const connectDatabase = async (): Promise<void> => {
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+        logger.warn('⚠️ MONGO_URI not set, skipping database connection');
+        return;
+    }
     try {
-        await mongoose.connect(config.MONGO_URI);
+        await mongoose.connect(mongoUri);
         logger.info('✅ MongoDB connected successfully');
     } catch (error) {
         logger.error('❌ MongoDB connection error:', error);
-        process.exit(1);
+        // MongoDB ulanmasa ham bot ishlayveradi
+        logger.warn('⚠️ Bot MongoDB siz davom etmoqda (blocking feature ishlamaydi)');
     }
 };

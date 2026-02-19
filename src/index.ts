@@ -1,15 +1,13 @@
 import { connectDatabase } from './database/connection';
 import { startTelegramClient, client } from './telegram/client';
 import { logger } from './utils/logger';
-import mongoose from 'mongoose';
 
 const start = async () => {
     logger.info('🚀 Starting AI User-Bot...');
 
-    // 1. Connect to Database
+    // Optional: Connect to Database (for blocking feature)
     await connectDatabase();
-
-    // 2. Start Telegram Client
+    // Start Telegram Client
     await startTelegramClient();
 
     logger.info('✨ Bot is up and running!');
@@ -22,9 +20,6 @@ const shutdown = async (signal: string) => {
     try {
         await client.disconnect();
         logger.info('Telegram Client disconnected.');
-
-        await mongoose.disconnect();
-        logger.info('MongoDB disconnected.');
 
         process.exit(0);
     } catch (error) {

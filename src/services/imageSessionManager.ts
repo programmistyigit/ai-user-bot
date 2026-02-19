@@ -3,6 +3,11 @@ import { TelegramClient } from 'telegram';
 import { logger } from '../utils/logger';
 import { aiHandler } from '../ai/ollama';
 import { helpers } from 'telegram';
+import {
+    sendTextToAI,
+    getMessageText,
+    pendingRequests
+} from './aiUtils';
 
 // =============================================
 // IMAGE SESSION MANAGER
@@ -204,11 +209,7 @@ async function downloadPhoto(message: Api.Message, client: TelegramClient): Prom
     }
 }
 
-import {
-    sendTextToAI,
-    getMessageText,
-    pendingRequests
-} from './aiUtils';
+// (import ko'chirildi fayl boshiga)
 
 
 /**
@@ -269,6 +270,12 @@ async function sendToModel(userId: string): Promise<void> {
 
         if (abortController.signal.aborted) return;
 
+        // Qwen bo'sh javob qaytarsa pipeline to'xtatiladi
+        if (!qwenOutput || qwenOutput.trim().length === 0) {
+            logger.warn(`⚠️ Qwen bo'sh javob qaytardi, pipeline to'xtatildi, user: ${userId}`);
+            return;
+        }
+
         logger.info(`📝 Qwen tavsifi olindi, endi DeepSeek ga yuboriladi, user: ${userId}`);
 
         // Description content yaratish (User yozgan captionlar)
@@ -296,17 +303,6 @@ async function sendToModel(userId: string): Promise<void> {
             return;
         }
         logger.error('❌ Vision-to-Text pipeline xatoligi:', error);
-
-        if (client && peer && !abortController.signal.aborted) {
-            try {
-                await client.sendMessage(peer, {
-                    message: "Uzr, rasmni tahlil qilishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.",
-                    parseMode: 'html'
-                });
-            } catch (sendError) {
-                logger.error('Xato xabarini yuborishda muammo:', sendError);
-            }
-        }
     } finally {
         // Session tozalash
         clearSession(userId);

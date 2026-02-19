@@ -22,7 +22,6 @@ export const startTelegramClient = async () => {
         });
 
         logger.info('✅ Telegram Client Connected!');
-        logger.info(`Session String (Save this to .env): ${client.session.save()}`);
 
         client.addEventHandler(handleIncomingMessage, new NewMessage({ incoming: true }));
         logger.info('🎧 Event Handler Registered');
