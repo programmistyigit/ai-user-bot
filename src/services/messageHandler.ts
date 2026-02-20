@@ -8,7 +8,8 @@ import {
     isPhotoMessage,
     isDocumentFile,
     isLocationMessage,
-    isGreetingMedia
+    isGreetingMedia,
+    isVoiceMessage
 } from './imageSessionManager';
 import {
     sendTextToAI,
@@ -104,9 +105,18 @@ export const handleIncomingMessage = async (event: NewMessageEvent) => {
             return;
         }
 
-        // 4. GIF, Video, Sticker, Voice, Video note → modelga "Salom"
+        // 4. Voice message handling
+        if (isVoiceMessage(message)) {
+            logger.info(`🎤 Ovozli xabar qabul qilindi, user: ${userId}`);
+            await message.reply({
+                message: "Assalomu alaykum! sizni korganimizdan hursandmiz!, afsus lekin ovozli habarni tushuna olmdim, yozib bera olasizmi?"
+            });
+            return;
+        }
+
+        // 5. GIF, Video, Sticker, Video note → modelga "Salom"
         if (isGreetingMedia(message)) {
-            logger.info(`🎬 Media (video/gif/sticker/voice) aniqlandi, user: ${userId}`);
+            logger.info(`🎬 Media (video/gif/sticker) aniqlandi, user: ${userId}`);
             await sendTextToAI(userId, 'Salom', message, event);
             return;
         }

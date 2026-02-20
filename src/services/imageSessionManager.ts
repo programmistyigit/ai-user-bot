@@ -189,6 +189,23 @@ export function isGreetingMedia(message: Api.Message): boolean {
 }
 
 /**
+ * Ovozli xabar (voice note)
+ */
+export function isVoiceMessage(message: Api.Message): boolean {
+    if (
+        message.media &&
+        message.media instanceof Api.MessageMediaDocument &&
+        message.media.document &&
+        message.media.document instanceof Api.Document
+    ) {
+        return message.media.document.attributes.some(
+            (attr: any) => attr instanceof Api.DocumentAttributeAudio && attr.voice
+        );
+    }
+    return false;
+}
+
+/**
  * Telegramdan rasmni yuklab, Buffer sifatida qaytarish
  */
 async function downloadPhoto(message: Api.Message, client: TelegramClient): Promise<Buffer | null> {
