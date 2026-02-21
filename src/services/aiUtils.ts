@@ -103,6 +103,10 @@ export async function sendTextToAI(
                 logger.warn(`⚠️ AI model (${aiHandler.textModel}) returned empty response, user: ${userId}`);
             }
         }
+    } catch (error) {
+        clearInterval(typingInterval);
+        pendingRequests.delete(userId);
+        logger.error('Error in sendTextToAI:', error);
     } finally {
         clearInterval(typingInterval);
         pendingRequests.delete(userId);
