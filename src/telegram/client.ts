@@ -10,6 +10,11 @@ const stringSession = new StringSession(config.SESSION_STRING);
 
 export const client = new TelegramClient(stringSession, config.API_ID, config.API_HASH, {
     connectionRetries: 5,
+    deviceModel: 'AI menejer',
+    systemVersion: '1.0.0',
+    appVersion: '1.0.0',
+    langCode: 'uz',
+
 });
 
 export const startTelegramClient = async () => {
