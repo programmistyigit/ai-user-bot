@@ -98,17 +98,25 @@ export async function sendTextToAI(
             }
 
             if (aiResponse && aiResponse.trim().length > 0) {
-                await message.respond({ message: aiResponse, parseMode: "html" });
+                await message.respond({ message: aiResponse, parseMode: 'markdown' });
             } else {
                 logger.warn(`⚠️ AI model (${aiHandler.textModel}) returned empty response, user: ${userId}`);
             }
         }
-    } catch (error) {
+    } catch (error: any) {
         clearInterval(typingInterval);
-        pendingRequests.delete(userId);
+
+        if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR' || error?.message === 'Request aborted') {
+            logger.info(`⏹️ AI request bekor qilindi (yangi xabar), user: ${userId}`);
+            return;
+        }
+
         logger.error('Error in sendTextToAI:', error);
     } finally {
         clearInterval(typingInterval);
-        pendingRequests.delete(userId);
+        // Faqat o'zimiz yaratgan controller bo'lsagina o'chiramiz
+        if (pendingRequests.get(userId) === abortController) {
+            pendingRequests.delete(userId);
+        }
     }
 }

@@ -14,8 +14,7 @@ export class AIHandler {
     public textModel: string = 'deepseek-v3.2:cloud';
     public visionModel: string = 'qwen3-vl:235b-cloud';
 
-    private maxRetries: number = 3;
-    private baseDelay: number = 2000; // 2 sekund
+    private retryDelayStep: number = 200; // 0.2 sekund har bir xato uchun
 
     /**
      * Retry bilan Ollama chat so'rovi
@@ -29,7 +28,7 @@ export class AIHandler {
     ): Promise<string> {
         let lastError: any;
 
-        for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        for (let attempt = 1; ; attempt++) {
             try {
                 if (signal?.aborted) {
                     throw new DOMException('Request aborted', 'AbortError');
@@ -39,7 +38,13 @@ export class AIHandler {
                     model: model,
                     messages: messages,
                 });
-                return response.message.content;
+
+                const content = response.message.content;
+                if (!content || content.trim().length === 0) {
+                    throw new Error('Empty response from model');
+                }
+
+                return content;
 
             } catch (error: any) {
                 lastError = error;
@@ -49,19 +54,29 @@ export class AIHandler {
                     throw error;
                 }
 
-                // 503 yoki network xato — retry
+                // 503, network xato yoki empty response — retry
                 const isRetryable = error?.status_code === 503
                     || error?.message?.includes('Service Temporarily Unavailable')
-                    || error?.message?.includes('503');
+                    || error?.message?.includes('503')
+                    || error?.message === 'Empty response from model';
 
-                if (isRetryable && attempt < this.maxRetries) {
-                    const delay = this.baseDelay * Math.pow(2, attempt - 1); // 2s, 4s, 8s
-                    logger.warn(`⚠️ Attempt ${attempt}/${this.maxRetries} failed (503). Retrying in ${delay / 1000}s...`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                if (isRetryable) {
+                    const delay = attempt * this.retryDelayStep; // 1-urinish: 0.2s, 2-urinish: 0.4s, 10-urinish: 2s
+                    const reason = error?.message === 'Empty response from model' ? 'Empty response' : 'Network/503';
+                    logger.warn(`⚠️ Attempt ${attempt} failed (${reason}). Retrying in ${delay / 1000}s...`);
+
+                    // Delay vaqtida ham abortni kuzatish
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(resolve, delay);
+                        signal?.addEventListener('abort', () => {
+                            clearTimeout(timeout);
+                            reject(new DOMException('Request aborted during retry delay', 'AbortError'));
+                        }, { once: true });
+                    });
                     continue;
                 }
 
-                // Boshqa xato yoki oxirgi attempt — throw
+                // Boshqa xato — throw
                 throw error;
             }
         }

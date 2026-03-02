@@ -9,6 +9,8 @@ interface Config {
     OLLAMA_HOST: string;
     ADMIN_PHONE: string;
     SESSION_STRING: string;
+    WS_PORT: number;
+    BOT_TOKEN: string;
 }
 
 const getEnv = (key: string, required: boolean = true): string => {
@@ -24,5 +26,7 @@ export const config: Config = {
     API_HASH: getEnv('API_HASH'),
     OLLAMA_HOST: getEnv('OLLAMA_HOST'),
     ADMIN_PHONE: getEnv('ADMIN_PHONE'),
-    SESSION_STRING: getEnv('SESSION_STRING', false), // Optional initially
+    SESSION_STRING: getEnv('SESSION_STRING', false),
+    WS_PORT: parseInt(getEnv('WS_PORT', false) || '8080', 10),
+    BOT_TOKEN: getEnv('BOT_TOKEN', false),
 };

@@ -321,8 +321,10 @@ async function sendToModel(userId: string): Promise<void> {
         }
         logger.error('❌ Vision-to-Text pipeline xatoligi:', error);
     } finally {
-        // Session tozalash
-        clearSession(userId);
+        // Faqat o'zimiz yaratgan controller bo'lsagina sessionni tozalaymiz
+        if (session.abortController === abortController) {
+            clearSession(userId);
+        }
     }
 }
 

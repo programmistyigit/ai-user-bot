@@ -1,6 +1,5 @@
 import { NewMessageEvent } from 'telegram/events';
 import { Api } from 'telegram';
-import { UserModel } from '../database/models';
 import { logger } from '../utils/logger';
 import {
     addImageToSession,
@@ -16,6 +15,7 @@ import {
     getMessageText,
     pendingRequests
 } from './aiUtils';
+import { blockManager } from './blockManager';
 
 
 // Session middleware: /abortSession bilan to'xtatilgan chatlar
@@ -36,6 +36,13 @@ export const handleIncomingMessage = async (event: NewMessageEvent) => {
         }
 
         const userId = sender.id.toString();
+
+        // ===== BLOCK MANAGER CHECK =====
+        if (blockManager.isBlocked(userId)) {
+            logger.info(`🚫 Xabar e'tiborsiz qoldirildi (bloklangan), user: ${userId}`);
+            return;
+        }
+        // ===== END BLOCK MANAGER CHECK =====
 
         // ===== SESSION MIDDLEWARE =====
         const text = getMessageText(message);
@@ -63,13 +70,6 @@ export const handleIncomingMessage = async (event: NewMessageEvent) => {
         }
         // ===== END SESSION MIDDLEWARE =====
 
-        // Check if Blocked
-        const user = await UserModel.findOne({ telegramId: userId });
-        if (user && user.blockedUntil && user.blockedUntil > new Date()) {
-            logger.info(`Ignored message from blocked user: ${userId}`);
-            return;
-        }
-
         // ===== MEDIA HANDLING =====
 
         // 1. Photo → imageSessionManager ga
@@ -87,8 +87,7 @@ export const handleIncomingMessage = async (event: NewMessageEvent) => {
         if (isDocumentFile(message)) {
             logger.info(`📎 Document fayl qabul qilindi, user: ${userId}`);
             await message.respond({
-                message: "📎 Faylingizni qabul qildik! Adminlarimiz tez orada ko'rib chiqishadi.",
-                parseMode: "html"
+                message: "📎 Faylingizni qabul qildik! Adminlarimiz tez orada ko'rib chiqishadi."
             });
             return;
         }
